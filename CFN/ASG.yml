@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template to create an EC2 Auto Scaling Group
+
+Parameters:
+  VPCId:
+    Type: String
+    Description: The ID of the VPC
+
+  PrivateSubnets:
+    Type: CommaDelimitedList
+    Description: A list of private subnet IDs for the Auto Scaling group
+
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t2.micro
+
+  KeyName:
+    Type: String
+    Description: Select an existing EC2 KeyPair or choose "CreateNew" to generate a new one
+    AllowedValues:
+      - CreateNew
+      - ExistingKeyPair1
+      - ExistingKeyPair2
+      - ExistingKeyPair3
+    Default: CreateNew
+
+  EnvironmentTag:
+    Type: String
+    Description: Environment tag (e.g., Development, Staging, Production)
+
+  CPUUtilizationTarget:
+    Type: Number
+    Description: The target CPU utilization percentage for scaling
+    Default: 50
+
+Resources:
+  KeyPair:
+    Condition: CreateNewKeyPair
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub "${EnvironmentTag}-KeyPair"
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentTag
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${EnvironmentTag}-LaunchTemplate"
+      LaunchTemplateData:
+        InstanceType: !Ref InstanceType
+        KeyName: !If [CreateNewKeyPair, !Ref KeyPair, !Ref KeyName]
+        NetworkInterfaces:
+          - SubnetId: !Select [0, !Ref PrivateSubnets]
+            DeviceIndex: 0
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${EnvironmentTag}-Instance"
+              - Key: Environment
+                Value: !Ref EnvironmentTag
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${EnvironmentTag}-ASG"
+      VPCZoneIdentifier: !Ref PrivateSubnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 2
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentTag
+          PropagateAtLaunch: true
+
+  ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CPUUtilizationTarget
+
+Conditions:
+  CreateNewKeyPair: !Equals [!Ref KeyName, "CreateNew"]
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref AutoScalingGroup
+
+  LaunchTemplateId:
+    Description: ID of the Launch Template
+    Value: !Ref LaunchTemplate
+
+  KeyPairName:
+    Description: Name of the Key Pair used
+    Value: !If [CreateNewKeyPair, !Ref KeyPair, !Ref KeyName]
