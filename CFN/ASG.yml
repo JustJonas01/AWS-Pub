@@ -1,13 +1,13 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: CloudFormation template to create an EC2 Auto Scaling Group
+Description: CloudFormation template to create an EC2 Auto Scaling Group with KeyPair options
 
 Parameters:
   VPCId:
-    Type: String
-    Description: The ID of the VPC
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of the VPC to use
 
   PrivateSubnets:
-    Type: CommaDelimitedList
+    Type: List<AWS::EC2::Subnet::Id>
     Description: A list of private subnet IDs for the Auto Scaling group
 
   InstanceType:
@@ -15,15 +15,32 @@ Parameters:
     Description: EC2 instance type
     Default: t2.micro
 
-  KeyName:
+  ImageId:
     Type: String
-    Description: Select an existing EC2 KeyPair or choose "CreateNew" to generate a new one
+    Description: The ID of the Amazon Machine Image (AMI) to use for the instances
+
+  IsNewKey:
+    Type: String
+    Description: "Will the KeyPair be newly created?"
     AllowedValues:
-      - CreateNew
-      - ExistingKeyPair1
-      - ExistingKeyPair2
-      - ExistingKeyPair3
-    Default: CreateNew
+      - "true"
+      - "false"
+    Default: "true"
+
+  NewKeyName:
+    Type: String
+    Description: The name of the new KeyPair to create (only if IsNewKey is true)
+    Default: ""
+
+
+  ExistingKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Select an existing EC2 KeyPair (only if IsNewKey is false)
+    # Do not use Condition here. This will be handled by Resources section logic.
+
+  InstanceName:
+    Type: String
+    Description: The name of the instances that the Auto Scaling Group will launch
 
   EnvironmentTag:
     Type: String
@@ -34,12 +51,31 @@ Parameters:
     Description: The target CPU utilization percentage for scaling
     Default: 50
 
+  DesiredCapacity:
+    Type: Number
+    Description: The desired number of instances to run in the Auto Scaling Group
+    Default: 2
+
+  MinSize:
+    Type: Number
+    Description: The minimum number of instances in the Auto Scaling Group
+    Default: 1
+
+  MaxSize:
+    Type: Number
+    Description: The maximum number of instances in the Auto Scaling Group
+    Default: 3
+
+Conditions:
+  IsNewKeyTrue: !Equals [!Ref IsNewKey, "true"]
+  IsNewKeyFalse: !Equals [!Ref IsNewKey, "false"]
+
 Resources:
   KeyPair:
-    Condition: CreateNewKeyPair
+    Condition: IsNewKeyTrue
     Type: AWS::EC2::KeyPair
     Properties:
-      KeyName: !Sub "${EnvironmentTag}-KeyPair"
+      KeyName: !Ref NewKeyName
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentTag
@@ -49,8 +85,9 @@ Resources:
     Properties:
       LaunchTemplateName: !Sub "${EnvironmentTag}-LaunchTemplate"
       LaunchTemplateData:
+        ImageId: !Ref ImageId
         InstanceType: !Ref InstanceType
-        KeyName: !If [CreateNewKeyPair, !Ref KeyPair, !Ref KeyName]
+        KeyName: !If [IsNewKeyTrue, !Ref KeyPair, !Ref ExistingKeyName]
         NetworkInterfaces:
           - SubnetId: !Select [0, !Ref PrivateSubnets]
             DeviceIndex: 0
@@ -58,7 +95,7 @@ Resources:
           - ResourceType: instance
             Tags:
               - Key: Name
-                Value: !Sub "${EnvironmentTag}-Instance"
+                Value: !Ref InstanceName
               - Key: Environment
                 Value: !Ref EnvironmentTag
 
@@ -70,9 +107,9 @@ Resources:
       LaunchTemplate:
         LaunchTemplateId: !Ref LaunchTemplate
         Version: !GetAtt LaunchTemplate.LatestVersionNumber
-      MinSize: 1
-      MaxSize: 3
-      DesiredCapacity: 2
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
       Tags:
         - Key: Environment
           Value: !Ref EnvironmentTag
@@ -88,9 +125,6 @@ Resources:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: !Ref CPUUtilizationTarget
 
-Conditions:
-  CreateNewKeyPair: !Equals [!Ref KeyName, "CreateNew"]
-
 Outputs:
   AutoScalingGroupName:
     Description: Name of the Auto Scaling Group
@@ -102,4 +136,4 @@ Outputs:
 
   KeyPairName:
     Description: Name of the Key Pair used
-    Value: !If [CreateNewKeyPair, !Ref KeyPair, !Ref KeyName]
+    Value: !If [IsNewKeyTrue, !Ref KeyPair, !Ref ExistingKeyName]
