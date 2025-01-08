@@ -25,22 +25,28 @@ Parameters:
   VPCCIDR:
     Type: String
     Description: CIDR block for the VPC
+    Default: 10.0.0.0/16
+
 
   PublicSubnet1CIDR:
     Type: String
     Description: CIDR block for the first public subnet
+    Default: 10.0.1.0/24
 
   PublicSubnet2CIDR:
     Type: String
     Description: CIDR block for the second public subnet
+    Default: 10.0.2.0/24
 
   PrivateSubnet1CIDR:
     Type: String
     Description: CIDR block for the first private subnet
+    Default: 10.0.3.0/24
 
   PrivateSubnet2CIDR:
     Type: String
     Description: CIDR block for the second private subnet
+    Default: 10.0.4.0/24
 
   EnvironmentTag:
     Type: String
