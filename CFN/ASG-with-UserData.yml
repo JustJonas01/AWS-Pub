@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template to create an EC2 Auto Scaling Group with KeyPair options
+
+Parameters:
+  VPCId:
+    Type: AWS::EC2::VPC::Id
+    Description: The ID of the VPC to use
+
+  PrivateSubnets:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: A list of private subnet IDs for the Auto Scaling group
+
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t2.micro
+
+  ImageId:
+    Type: String
+    Description: The ID of the Amazon Machine Image (AMI) to use for the instances
+
+  IsNewKey:
+    Type: String
+    Description: "Will the KeyPair be newly created?"
+    AllowedValues:
+      - "true"
+      - "false"
+    Default: "true"
+
+  NewKeyName:
+    Type: String
+    Description: The name of the new KeyPair to create (only if IsNewKey is true)
+    Default: ""
+
+  ExistingKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Select an existing EC2 KeyPair (only if IsNewKey is false)
+
+  InstanceName:
+    Type: String
+    Description: The name of the instances that the Auto Scaling Group will launch
+
+  EnvironmentTag:
+    Type: String
+    Description: Environment tag (e.g., Development, Staging, Production)
+
+  CPUUtilizationTarget:
+    Type: Number
+    Description: The target CPU utilization percentage for scaling
+    Default: 50
+
+  DesiredCapacity:
+    Type: Number
+    Description: The desired number of instances to run in the Auto Scaling Group
+    Default: 2
+
+  MinSize:
+    Type: Number
+    Description: The minimum number of instances in the Auto Scaling Group
+    Default: 1
+
+  MaxSize:
+    Type: Number
+    Description: The maximum number of instances in the Auto Scaling Group
+    Default: 3
+
+Conditions:
+  IsNewKeyTrue: !Equals [!Ref IsNewKey, "true"]
+  IsNewKeyFalse: !Equals [!Ref IsNewKey, "false"]
+
+Resources:
+  KeyPair:
+    Condition: IsNewKeyTrue
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Ref NewKeyName
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentTag
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${EnvironmentTag}-LaunchTemplate"
+      LaunchTemplateData:
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        KeyName: !If [IsNewKeyTrue, !Ref KeyPair, !Ref ExistingKeyName]
+        NetworkInterfaces:
+          - SubnetId: !Select [0, !Ref PrivateSubnets]
+            DeviceIndex: 0
+        UserData: !Base64 |
+          #!/bin/bash
+          yum update -y
+          yum install -y httpd
+          systemctl start httpd
+          systemctl enable httpd
+          echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Ref InstanceName
+              - Key: Environment
+                Value: !Ref EnvironmentTag
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${EnvironmentTag}-ASG"
+      VPCZoneIdentifier: !Ref PrivateSubnets
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref DesiredCapacity
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentTag
+          PropagateAtLaunch: true
+
+  ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: !Ref CPUUtilizationTarget
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref AutoScalingGroup
+
+  LaunchTemplateId:
+    Description: ID of the Launch Template
+    Value: !Ref LaunchTemplate
+
+  KeyPairName:
+    Description: Name of the Key Pair used
+    Value: !If [IsNewKeyTrue, !Ref KeyPair, !Ref ExistingKeyName]
