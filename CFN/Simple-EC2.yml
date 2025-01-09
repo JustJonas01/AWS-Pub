@@ -23,12 +23,12 @@ Parameters:
 
   SecurityGroupPort:
     Type: Number
-    Description: The port for SecurityGroup access
+    Description: The port for SecurityGroup access, SG WILL NOT BE RETAIN IF DELETE
     Default: 22
 
   SecurityGroupSourceCIDR:
     Type: String
-    Description: The CIDR block for SecurityGroup access
+    Description: The CIDR block for SecurityGroup access, SG WILL NOT BE RETAIN IF DELETE
     Default: "0.0.0.0/0"
 
   InstanceType:
