@@ -47,6 +47,7 @@ Resources:
 
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    # DeletionPolicy: Retain --uncomment this if planning to keep the SG--
     Properties:
       GroupDescription: "Security group for EC2 instance"
       VpcId: !Ref VPC
